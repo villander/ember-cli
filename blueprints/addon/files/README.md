@@ -1,5 +1,7 @@
 # <%= addonName %>
 
+![Ember Version](https://embadge.io/v1/badge.svg?start=2.12.0)
+
 This README outlines the details of collaborating on this Ember addon.
 
 ## Installation
