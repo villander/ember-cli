@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const walkSync = require('walk-sync');
 const EOL = require('os').EOL;
 
+const { isExperimentEnabled } = require('../../lib/experiments');
 const runCommand = require('../helpers/run-command');
 const acceptance = require('../helpers/acceptance');
 const copyFixtureFiles = require('../helpers/copy-fixture-files');
@@ -57,11 +58,19 @@ describe('Acceptance: smoke-test', function() {
     //return ember(['generate', 'template', 'foo', '--in-repo-addon=my-addon']);
 
     // temporary work around
-    let templatePath = path.join('lib', 'my-addon', 'app', 'templates', 'foo.hbs');
+    let templatePath,
+        packageJsonPath;
+    if (isExperimentEnabled('MODULE_UNIFICATION')) {
+      templatePath = path.join('packages', 'my-addon', 'src', 'ui', 'routes', 'foo.hbs');
+      packageJsonPath = path.join('packages', 'my-addon', 'package.json');
+    } else {
+      templatePath = path.join('lib', 'my-addon', 'app', 'templates', 'foo.hbs');
+      packageJsonPath = path.join('lib', 'my-addon', 'package.json');
+    }
+
     fs.mkdirsSync(path.dirname(templatePath));
     fs.writeFileSync(templatePath, 'Hi, Mom!', { encoding: 'utf8' });
 
-    let packageJsonPath = path.join('lib', 'my-addon', 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);
     packageJson.dependencies = packageJson.dependencies || {};
     packageJson.dependencies['ember-cli-htmlbars'] = '*';
@@ -74,8 +83,23 @@ describe('Acceptance: smoke-test', function() {
 
   it('ember test still runs when a JavaScript testem config exists', co.wrap(function *() {
     yield copyFixtureFiles('smoke-tests/js-testem-config');
-    yield ember(['test']);
-    expect(process.env._TESTEM_CONFIG_JS_RAN).to.be.ok;
+
+    let result = yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'test');
+
+    let exitCode = result.code;
+    let output = result.output.join(EOL);
+
+    expect(exitCode).to.eql(0);
+    expect(output).to.include('***CUSTOM_TESTEM_JS**');
+  }));
+
+  it('eslint passes after running ember new', co.wrap(function *() {
+    let result = yield runCommand(path.join('.', 'node_modules', 'eslint', 'bin', 'eslint.js'), appRoot);
+
+    let exitCode = result.code;
+
+    expect(exitCode).to.equal(0, 'exit code should be 0 for passing tests');
+    expect(result.output).to.be.empty;
   }));
 
   // there is a bug in here when running the entire suite on Travis
@@ -124,7 +148,7 @@ describe('Acceptance: smoke-test', function() {
     expect(exitCode).to.equal(0, 'exit code should be 0 for passing tests');
     expect(output).to.match(/JSHint/, 'JSHint should be run on production assets');
     expect(output).to.match(/fail\s+0/, 'no failures');
-    expect(output).to.match(/pass\s+\d+/, 'man=y passing');
+    expect(output).to.match(/pass\s+\d+/, 'many passing');
   }));
 
   it('ember test --path with previous build', co.wrap(function *() {
@@ -152,7 +176,35 @@ describe('Acceptance: smoke-test', function() {
     output = output.join(EOL);
 
     expect(output).to.match(/fail\s+0/, 'no failures');
-    expect(output).to.match(/pass\s+9/, '9 passing');
+    expect(output).to.match(/pass\s+\d+/, 'many passing');
+  }));
+
+  it('ember test wasm', co.wrap(function *() {
+    let originalWrite = process.stdout.write;
+    let output = [];
+
+    yield copyFixtureFiles('smoke-tests/serve-wasm');
+
+    // TODO: Change to using ember() helper once it properly saves build artifacts
+    yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'build');
+
+    // TODO: Figure out how to get this to write into the MockUI
+    process.stdout.write = (function() {
+      return function() {
+        output.push(arguments[0]);
+      };
+    }(originalWrite));
+
+    let result = yield ember(['test', '--path=dist']).finally(() => {
+      process.stdout.write = originalWrite;
+    });
+
+    expect(result.exitCode).to.equal(0, 'exit code should be 0 for passing tests');
+
+    output = output.join(EOL);
+
+    expect(output).to.match(/fail\s+0/, 'no failures');
+    expect(output).to.match(/pass\s+\d+/, 'many passing');
   }));
 
   it('ember new foo, build development, and verify generated files', co.wrap(function *() {
@@ -165,8 +217,8 @@ describe('Acceptance: smoke-test', function() {
   }));
 
   it('ember build exits with non-zero code when build fails', co.wrap(function *() {
-    let appJsPath = path.join(appRoot, 'app', 'app.js');
-    let ouputContainsBuildFailed = false;
+    let rootPath = isExperimentEnabled('MODULE_UNIFICATION') ? 'src' : 'app';
+    let appJsPath = path.join(appRoot, rootPath, 'app.js');
 
     let result = yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'build');
     expect(result.code).to.equal(0, `expected exit code to be zero, but got ${result.code}`);
@@ -174,17 +226,8 @@ describe('Acceptance: smoke-test', function() {
     // add something broken to the project to make build fail
     fs.appendFileSync(appJsPath, '{(syntaxError>$@}{');
 
-    result = yield expect(runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'build', {
-      onOutput(string) {
-        // discard output as there will be a lot of errors and a long stacktrace
-        // just mark that the output contains expected text
-        if (!ouputContainsBuildFailed && string.match(/Build failed/)) {
-          ouputContainsBuildFailed = true;
-        }
-      },
-    })).to.be.rejected;
+    result = yield expect(runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'build')).to.be.rejected;
 
-    expect(ouputContainsBuildFailed, 'command output must contain "Build failed" text').to.be.ok;
     expect(result.code).to.not.equal(0, `expected exit code to be non-zero, but got ${result.code}`);
   }));
 
@@ -216,7 +259,7 @@ describe('Acceptance: smoke-test', function() {
     });
   }));
 
-  it('ember new foo, build --watch development, and verify rebuilt after change', co.wrap(function *() {
+  it.skip('ember new foo, build --watch development, and verify rebuilt after change', co.wrap(function *() {
     let touched = false;
     let appJsPath = path.join(appRoot, 'app', 'app.js');
     let builtJsPath = path.join(appRoot, 'dist', 'assets', 'some-cool-app.js');
@@ -243,7 +286,7 @@ describe('Acceptance: smoke-test', function() {
     });
   }));
 
-  it('ember new foo, build --watch development, and verify rebuilt after multiple changes', co.wrap(function *() {
+  it.skip('ember new foo, build --watch development, and verify rebuilt after multiple changes', co.wrap(function *() {
     let buildCount = 0;
     let touched = false;
     let appJsPath = path.join(appRoot, 'app', 'app.js');
@@ -283,7 +326,7 @@ describe('Acceptance: smoke-test', function() {
     });
   }));
 
-  it('ember new foo, server, SIGINT clears tmp/', co.wrap(function *() {
+  it.skip('ember new foo, server, SIGINT clears tmp/', co.wrap(function *() {
     let result = yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'server', '--port=54323', '--live-reload=false', {
       onOutput(string, child) {
         if (string.match(/Build successful/)) {
@@ -292,11 +335,17 @@ describe('Acceptance: smoke-test', function() {
       },
     });
 
-    let dirPath = path.join(appRoot, 'tmp');
-    let dir = fs.readdirSync(dirPath).filter(file => file !== '.metadata_never_index');
-
     expect(result.code, 'should be zero exit code').to.equal(0);
-    expect(dir.length, '/tmp should be empty').to.equal(0);
+
+    let dirPath = path.join(appRoot, 'tmp');
+
+    // before broccoli2, various addons used tmp/ in the project.
+    // With broccoli2 that should not exist, they should be using os.tmpdir().
+    // So we'll just check for "if tmp/ is there, are the contents correct?"
+    if (fs.existsSync(dirPath)) {
+      let dir = fs.readdirSync(dirPath).filter(file => file !== '.metadata_never_index');
+      expect(dir.length, `${dirPath} should be empty`).to.equal(0);
+    }
   }));
 
   it('ember new foo, test, SIGINT exits with error and clears tmp/', co.wrap(function *() {
@@ -309,11 +358,17 @@ describe('Acceptance: smoke-test', function() {
       },
     })).to.be.rejected;
 
-    let dirPath = path.join(appRoot, 'tmp');
-    let dir = fs.readdirSync(dirPath).filter(file => file !== '.metadata_never_index');
-
     expect(result.code, 'should be error exit code').to.not.equal(0);
-    expect(dir.length, '/tmp should be empty').to.equal(0);
+
+    let dirPath = path.join(appRoot, 'tmp');
+
+    // before broccoli2, various addons used tmp/ in the project.
+    // With broccoli2 that should not exist, they should be using os.tmpdir().
+    // So we'll just check for "if tmp/ is there, are the contents correct?"
+    if (fs.existsSync(dirPath)) {
+      let dir = fs.readdirSync(dirPath).filter(file => file !== '.metadata_never_index');
+      expect(dir.length, `${dirPath} should be empty`).to.equal(0);
+    }
   }));
 
   it('ember new foo, build production and verify css files are concatenated', co.wrap(function *() {
@@ -329,6 +384,22 @@ describe('Acceptance: smoke-test', function() {
         expect(file(`dist/assets/${filepath}`))
           .to.contain('.some-weird-selector')
           .to.contain('.some-even-weirder-selector');
+      }
+    });
+  }));
+
+  it('ember new foo, build production and verify css files are minified', co.wrap(function *() {
+    yield copyFixtureFiles('with-unminified-styles');
+
+    yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'build', '--environment=production');
+
+    let dirPath = path.join(appRoot, 'dist', 'assets');
+    let dir = fs.readdirSync(dirPath);
+    let cssNameRE = new RegExp(`${appName}-([a-f0-9]+)\\.css`, 'i');
+    dir.forEach(function(filepath) {
+      if (cssNameRE.test(filepath)) {
+        let contents = fs.readFileSync(path.join(appRoot, 'dist', 'assets', filepath), { encoding: 'utf8' });
+        expect(contents).to.match(/^\S+$/, 'css file is minified');
       }
     });
   }));
@@ -351,10 +422,12 @@ describe('Acceptance: smoke-test', function() {
   it('ember can override and reuse the built-in blueprints', co.wrap(function *() {
     yield copyFixtureFiles('addon/with-blueprint-override');
 
-    yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'generate', 'component', 'foo-bar', '-p');
+    yield runCommand(path.join('.', 'node_modules', 'ember-cli', 'bin', 'ember'), 'generate', 'component', 'foo-bar');
+
+    let filePath = isExperimentEnabled('MODULE_UNIFICATION') ? 'src/ui/components/new-path/foo-bar/component.js' : 'app/components/new-path/foo-bar.js';
 
     // because we're overriding, the fileMapTokens is default, sans 'component'
-    expect(file('app/foo-bar/component.js')).to.contain('generated component successfully');
+    expect(file(filePath)).to.contain('generated component successfully');
   }));
 
   it('template linting works properly for pods and classic structured templates', co.wrap(function *() {

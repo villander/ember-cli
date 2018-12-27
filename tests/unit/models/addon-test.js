@@ -146,75 +146,20 @@ describe('models/addon.js', function() {
     });
   });
 
-  describe('resolvePath', function() {
-    beforeEach(function() {
-      addon = {
-        pkg: {
-          'ember-addon': {
-            'main': '',
-          },
-        },
-        path: '',
-      };
-    });
-
-    it('adds .js if not present', function() {
-      addon.pkg['ember-addon']['main'] = 'index';
-      let resolvedFile = path.basename(Addon.resolvePath(addon));
-      expect(resolvedFile).to.equal('index.js');
-    });
-
-    it('doesn\'t add .js if it is .js', function() {
-      addon.pkg['ember-addon']['main'] = 'index.js';
-      let resolvedFile = path.basename(Addon.resolvePath(addon));
-      expect(resolvedFile).to.equal('index.js');
-    });
-
-    it('doesn\'t add .js if it has another extension', function() {
-      addon.pkg['ember-addon']['main'] = 'index.coffee';
-      let resolvedFile = path.basename(Addon.resolvePath(addon));
-      expect(resolvedFile).to.equal('index.coffee');
-    });
-
-    it('allows lookup of non-`index.js` `main` entry points', function() {
-      delete addon.pkg['ember-addon'];
-      addon.pkg['main'] = 'some/other/path.js';
-
-      let resolvedFile = Addon.resolvePath(addon);
-      expect(resolvedFile).to.equal(path.join(process.cwd(), 'some/other/path.js'));
-    });
-
-    it('falls back to `index.js` if `main` and `ember-addon` are not found', function() {
-      delete addon.pkg['ember-addon'];
-
-      let resolvedFile = Addon.resolvePath(addon);
-      expect(resolvedFile).to.equal(path.join(process.cwd(), 'index.js'));
-    });
-
-    it('falls back to `index.js` if `main` and `ember-addon.main` are not found', function() {
-      delete addon.pkg['ember-addon'].main;
-
-      let resolvedFile = Addon.resolvePath(addon);
-      expect(resolvedFile).to.equal(path.join(process.cwd(), 'index.js'));
-    });
-  });
-
   describe('initialized addon', function() {
     this.timeout(40000);
-    before(function() {
+    beforeEach(function() {
       projectPath = path.resolve(fixturePath, 'simple');
       const packageContents = require(path.join(projectPath, 'package.json'));
       let ui = new MockUI();
       let cli = new MockCLI({ ui });
       project = new Project(projectPath, packageContents, ui, cli);
-      let discoverFromCli = td.replace(project.addonDiscovery, 'discoverFromCli');
-      td.when(discoverFromCli(), { ignoreExtraArgs: true }).thenReturn([]);
       project.initializeAddons();
     });
 
     describe('generated addon', function() {
       beforeEach(function() {
-        addon = findWhere(project.addons, { name: 'Ember CLI Generated with export' });
+        addon = findWhere(project.addons, { name: 'ember-generated-with-export-addon' });
 
         // Clear the caches
         delete addon._moduleName;
@@ -328,7 +273,7 @@ describe('models/addon.js', function() {
 
     describe('addon with dependencies', function() {
       beforeEach(function() {
-        addon = findWhere(project.addons, { name: 'Ember Addon With Dependencies' });
+        addon = findWhere(project.addons, { name: 'ember-addon-with-dependencies' });
       });
 
       it('returns a listing of all dependencies in the addon\'s package.json', function() {
@@ -375,6 +320,8 @@ describe('models/addon.js', function() {
         } else {
           process.env.EMBER_ADDON_ENV = originalEnvValue;
         }
+
+        delete process.env.EMBER_CLI_IGNORE_ADDON_NAME_MISMATCH;
       });
 
       it('returns true when `EMBER_ADDON_ENV` is set to development', function() {
@@ -383,12 +330,29 @@ describe('models/addon.js', function() {
         expect(addon.isDevelopingAddon(), 'addon is being developed').to.eql(true);
       });
 
-      it('returns true when the addon name is prefixed in package.json and not in index.js', function() {
+      it('throws when the addon name is prefixed in package.json and not in index.js', function() {
         process.env.EMBER_ADDON_ENV = 'development';
-
+        project.root = 'foo';
         project.name = () => ('@foo/my-addon');
         addon.name = 'my-addon';
-        expect(addon.isDevelopingAddon(), 'addon is being developed').to.eql(true);
+        expect(() => addon.isDevelopingAddon()).to.throw(/Your names in package.json and index.js should match*/);
+      });
+
+      it('does not throw for a mismatched addon name when process.env.EMBER_CLI_IGNORE_ADDON_NAME_MISMATCH is set', function() {
+        process.env.EMBER_CLI_IGNORE_ADDON_NAME_MISMATCH = 'true';
+        process.env.EMBER_ADDON_ENV = 'development';
+        project.root = 'foo';
+        project.name = () => ('@foo/my-addon');
+        addon.name = 'my-addon';
+        expect(addon.isDevelopingAddon()).to.eql(true);
+      });
+
+      it('throws an error if addon name is different in package.json and index.js ', function() {
+        process.env.EMBER_ADDON_ENV = 'development';
+        project.root = 'foo';
+        project.name = () => ('foo-my-addon');
+        addon.name = 'my-addon';
+        expect(() => addon.isDevelopingAddon()).to.throw(/Your names in package.json and index.js should match*/);
       });
 
       it('returns false when `EMBER_ADDON_ENV` is not set', function() {
@@ -424,7 +388,7 @@ describe('models/addon.js', function() {
         expect(addon.findOwnAddonByName('my-cool-addon')).to.eql(ownAddon);
       });
 
-      it('it does not the given addon', function() {
+      it('it does not have the given addon', function() {
         let addon = new ThisAddon();
         let ownAddon = { name: 'my-cool-addon' };
         addon.addons = [ownAddon];
@@ -600,22 +564,6 @@ describe('models/addon.js', function() {
     });
   });
 
-  describe('Addon.lookup', function() {
-    it('should throw an error if an addon could not be found', function() {
-      let addon = {
-        path: 'foo/bar-baz/blah/doesnt-exist',
-        pkg: {
-          name: 'dummy-addon',
-          'ember-addon': { },
-        },
-      };
-
-      expect(() => {
-        Addon.lookup(addon);
-      }).to.throw(/The `dummy-addon` addon could not be found at `foo\/bar-baz\/blah\/doesnt-exist`\./);
-    });
-  });
-
   describe('compileTemplates', function() {
     beforeEach(function() {
       projectPath = path.resolve(fixturePath, 'simple');
@@ -623,35 +571,10 @@ describe('models/addon.js', function() {
       let cli = new MockCLI();
 
       project = new Project(projectPath, packageContents, cli.ui, cli);
-      let discoverFromCli = td.replace(project.addonDiscovery, 'discoverFromCli');
-      td.when(discoverFromCli(), { ignoreExtraArgs: true }).thenReturn([]);
 
       project.initializeAddons();
 
-      addon = findWhere(project.addons, { name: 'Ember CLI Generated with export' });
-    });
-
-    it('should throw a useful error if a template compiler is not present -- non-pods', function() {
-      addon.root = path.join(fixturePath, 'with-addon-templates');
-
-      expect(() => {
-        addon.compileTemplates();
-      }).to.throw(
-        `Addon templates were detected, but there are no template compilers registered for \`${addon.name}\`. ` +
-        `Please make sure your template precompiler (commonly \`ember-cli-htmlbars\`) is listed in \`dependencies\` ` +
-        `(NOT \`devDependencies\`) in \`${addon.name}\`'s \`package.json\`.`);
-    });
-
-    it('should throw a useful error if a template compiler is not present -- pods', function() {
-      addon.root = path.join(fixturePath, 'with-addon-pod-templates');
-
-      expect(() => {
-        addon.compileTemplates();
-      }).to.throw(
-        `Addon templates were detected, but there are no template compilers registered for \`${addon.name}\`. ` +
-        `Please make sure your template precompiler (commonly \`ember-cli-htmlbars\`) is listed in \`dependencies\` ` +
-        `(NOT \`devDependencies\`) in \`${addon.name}\`'s \`package.json\`.`
-      );
+      addon = findWhere(project.addons, { name: 'ember-generated-with-export-addon' });
     });
 
     it('should not throw an error if addon/templates is present but empty', function() {
@@ -670,12 +593,10 @@ describe('models/addon.js', function() {
       let cli = new MockCLI();
 
       project = new Project(projectPath, packageContents, cli.ui, cli);
-      let discoverFromCli = td.replace(project.addonDiscovery, 'discoverFromCli');
-      td.when(discoverFromCli(), { ignoreExtraArgs: true }).thenReturn([]);
 
       project.initializeAddons();
 
-      addon = findWhere(project.addons, { name: 'Ember CLI Generated with export' });
+      addon = findWhere(project.addons, { name: 'ember-generated-with-export-addon' });
     });
 
     it('should not call _getAddonTemplatesTreeFiles when default treePath is used', function() {
@@ -787,8 +708,8 @@ describe('models/addon.js', function() {
     });
   });
 
-  describe('addonDiscovery', function() {
-    let discovery, addon, ui;
+  describe('packageInfoCache', function() {
+    let packageInfoCache, addon, ui;
 
     beforeEach(function() {
       projectPath = path.resolve(fixturePath, 'simple');
@@ -804,11 +725,11 @@ describe('models/addon.js', function() {
       });
 
       addon = new AddonTemp(project, project);
-      discovery = addon.addonDiscovery;
+      packageInfoCache = addon.packageInfoCache;
     });
 
-    it('is provided with the addon\'s `ui` object', function() {
-      expect(discovery.ui).to.equal(ui);
+    it('is provided with the parent\'s `packageInfoCache` object', function() {
+      expect(packageInfoCache).to.equal(project.packageInfoCache);
     });
   });
 
@@ -823,7 +744,7 @@ describe('models/addon.js', function() {
       project = new Project(projectPath, packageContents, cli.ui, cli);
 
       let BaseAddon = Addon.extend({
-        name: 'base-addon',
+        name: 'test-project',
         root: projectPath,
       });
 

@@ -70,15 +70,14 @@ describe('blueprint - addon', function() {
     "ember-addon"\n\
   ],\n\
   "scripts": {\n\
-    "lint:js": "eslint ./*.js addon addon-test-support app config lib server test-support tests",\n\
-    "test": "ember try:each"\n\
+    "test:all": "ember try:each"\n\
   },\n\
   "dependencies": {},\n\
   "devDependencies": {\n\
-    "ember-disable-prototype-extensions": "^1.1.2",\n\
-    "ember-source-channel-url": "^1.0.1",\n\
-    "ember-try": "^0.2.23",\n\
-    "eslint-plugin-node": "^5.2.1"\n\
+    "ember-disable-prototype-extensions": "^1.1.3",\n\
+    "ember-source-channel-url": "^1.1.0",\n\
+    "ember-try": "^1.0.0",\n\
+    "eslint-plugin-node": "^7.0.1"\n\
   },\n\
   "ember-addon": {\n\
     "configPath": "tests/dummy/config"\n\
@@ -134,18 +133,16 @@ describe('blueprint - addon', function() {
         }));
 
         let json = JSON.parse(output);
-        expect(json.devDependencies['ember-disable-prototype-extensions']).to.equal('^1.1.2');
+        expect(json.devDependencies['ember-disable-prototype-extensions']).to.equal('^1.1.3');
       });
 
-      it('overwrites `scripts.test`', function() {
+      it('adds `scripts.test:all`', function() {
         let output = blueprint.updatePackageJson(JSON.stringify({
-          scripts: {
-            test: 'test-string',
-          },
+          scripts: {},
         }));
 
         let json = JSON.parse(output);
-        expect(json.scripts.test).to.equal('ember try:each');
+        expect(json.scripts['test:all']).to.equal('ember try:each');
       });
 
       it('overwrites `ember-addon.configPath`', function() {

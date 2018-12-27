@@ -119,7 +119,14 @@ describe('Watcher', function() {
           ssl: true,
           sslCert: 'tests/fixtures/ssl/server.crt',
           sslKey: 'tests/fixtures/ssl/server.key',
-          rootURL: '/',
+          environment: 'development',
+          project: {
+            config() {
+              return {
+                rootURL: '/',
+              };
+            },
+          },
         },
       });
 
@@ -141,7 +148,14 @@ describe('Watcher', function() {
         options: {
           host: undefined,
           port: '1337',
-          baseURL: '/foo',
+          environment: 'development',
+          project: {
+            config() {
+              return {
+                baseURL: '/foo',
+              };
+            },
+          },
         },
       });
 
@@ -164,7 +178,14 @@ describe('Watcher', function() {
         options: {
           host: undefined,
           port: '1337',
-          rootURL: '/foo',
+          environment: 'development',
+          project: {
+            config() {
+              return {
+                rootURL: '/foo',
+              };
+            },
+          },
         },
       });
 
@@ -189,6 +210,14 @@ describe('Watcher', function() {
           host: undefined,
           port: '1337',
           rootURL: '',
+          environment: 'development',
+          project: {
+            config() {
+              return {
+                rootURL: '',
+              };
+            },
+          },
         },
       });
 
@@ -199,6 +228,38 @@ describe('Watcher', function() {
       let output = ui.output.trim().split(EOL);
       expect(output[0]).to.equal(`${chalk.green('Build successful (12344ms)')} – Serving on http://localhost:1337/`);
       expect(output.length).to.equal(1, 'expected only one line of output');
+    });
+
+    it('with customURL', function() {
+      let subject = new Watcher({
+        ui,
+        analytics,
+        builder,
+        watcher,
+        serving: true,
+        options: {
+          host: undefined,
+          port: '1337',
+          rootURL: '',
+          environment: 'development',
+          project: {
+            config() {
+              return {
+                rootURL: '',
+              };
+            },
+          },
+        },
+      });
+      subject.serveURL = function() {
+        return `http://customurl.com/`;
+      };
+      subject.didChange({
+        totalTime: 12344000000,
+      });
+
+      let output = ui.output.trim().split(EOL);
+      expect(output[0]).to.equal(`${chalk.green('Build successful (12344ms)')} – Serving on http://customurl.com/`);
     });
   });
 

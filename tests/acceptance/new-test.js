@@ -11,6 +11,7 @@ let root = process.cwd();
 const util = require('util');
 const EOL = require('os').EOL;
 const chalk = require('chalk');
+const hasGlobalYarn = require('../helpers/has-global-yarn');
 
 const chai = require('../chai');
 let expect = chai.expect;
@@ -18,19 +19,26 @@ let file = chai.file;
 let dir = chai.dir;
 const forEach = require('ember-cli-lodash-subset').forEach;
 const assertVersionLock = require('../helpers/assert-version-lock');
+const { isExperimentEnabled } = require('../../lib/experiments');
 
 let tmpDir = './tmp/new-test';
 
 describe('Acceptance: ember new', function() {
   this.timeout(10000);
+  let ORIGINAL_PROCESS_ENV_CI;
 
   beforeEach(co.wrap(function *() {
     yield tmp.setup(tmpDir);
     process.chdir(tmpDir);
+    ORIGINAL_PROCESS_ENV_CI = process.env.CI;
   }));
 
   afterEach(function() {
-    process.env.MODULE_UNIFICATION = undefined;
+    if (ORIGINAL_PROCESS_ENV_CI === undefined) {
+      delete process.env.CI;
+    } else {
+      process.env.CI = ORIGINAL_PROCESS_ENV_CI;
+    }
     return tmp.teardown(tmpDir);
   });
 
@@ -51,9 +59,69 @@ describe('Acceptance: ember new', function() {
       .to.deep.equal(actual, `${EOL} expected: ${util.inspect(expected)}${EOL} but got: ${util.inspect(actual)}`);
   }
 
-  function confirmBlueprinted() {
+  function confirmBlueprintedApp() {
+    if (isExperimentEnabled('MODULE_UNIFICATION')) {
+      return confirmBlueprintedForDir('blueprints/module-unification-app');
+    }
     return confirmBlueprintedForDir('blueprints/app');
   }
+
+  it('ember new adds ember-welcome-page by default', co.wrap(function *() {
+    yield ember([
+      'new',
+      'foo',
+      '--skip-npm',
+      '--skip-bower',
+      '--skip-git',
+    ]);
+
+    expect(file('package.json'))
+      .to.match(/"ember-welcome-page"/);
+
+    const filePath = isExperimentEnabled("MODULE_UNIFICATION")
+      ? "src/ui/routes/application/template.hbs"
+      : "app/templates/application.hbs";
+
+    expect(file(filePath))
+      .to.contain("{{welcome-page}}");
+  }));
+
+  it('ember new --no-welcome skips installation of ember-welcome-page', co.wrap(function *() {
+    yield ember([
+      'new',
+      'foo',
+      '--skip-npm',
+      '--skip-bower',
+      '--skip-git',
+      '--no-welcome',
+    ]);
+
+    expect(file('package.json'))
+      .not.to.match(/"ember-welcome-page"/);
+
+    const filePath = isExperimentEnabled("MODULE_UNIFICATION")
+      ? "src/ui/routes/application/template.hbs"
+      : "app/templates/application.hbs";
+
+    expect(file(filePath))
+      .to.contain("Welcome to Ember");
+  }));
+
+  it('ember new module-unification-app', co.wrap(function *() {
+    yield ember([
+      'new',
+      'foo',
+      '--blueprint',
+      'module-unification-app',
+      '--skip-npm',
+      '--skip-bower',
+    ]);
+    confirmBlueprintedForDir('blueprints/module-unification-app');
+
+    expect(dir('tests/unit')).to.not.exist;
+    expect(dir('tests/integration')).to.not.exist;
+    expect(dir('tests/acceptance')).to.exist;
+  }));
 
   it('ember new foo, where foo does not yet exist, works', co.wrap(function *() {
     yield ember([
@@ -63,11 +131,10 @@ describe('Acceptance: ember new', function() {
       '--skip-bower',
     ]);
 
-    confirmBlueprinted();
+    confirmBlueprintedApp();
   }));
 
-  it('MODULE_UNIFICATION=true ember new foo works', co.wrap(function *() {
-    process.env.MODULE_UNIFICATION = 'true';
+  it('ember new foo, blueprint targets match the default ember-cli targets', co.wrap(function *() {
     yield ember([
       'new',
       'foo',
@@ -75,7 +142,10 @@ describe('Acceptance: ember new', function() {
       '--skip-bower',
     ]);
 
-    confirmBlueprintedForDir('blueprints/module-unification-app');
+    process.env.CI = true;
+    const defaultTargets = require('../../lib/utilities/default-targets').browsers;
+    const blueprintTargets = require(path.resolve('config/targets.js')).browsers;
+    expect(blueprintTargets).to.have.same.deep.members(defaultTargets);
   }));
 
   it('ember new with empty app name fails with a warning', co.wrap(function *() {
@@ -164,7 +234,7 @@ describe('Acceptance: ember new', function() {
     expect(error.name).to.equal('SilentError');
     expect(error.message).to.equal(`You cannot use the ${chalk.green('new')} command inside an ember-cli project.`);
 
-    confirmBlueprinted();
+    confirmBlueprintedApp();
   }));
 
   it('ember new with blueprint uses the specified blueprint directory with a relative path', co.wrap(function *() {
@@ -242,6 +312,10 @@ describe('Acceptance: ember new', function() {
   }));
 
   it('ember new uses yarn when blueprint has yarn.lock', co.wrap(function *() {
+    if (!hasGlobalYarn) {
+      this.skip();
+    }
+
     fs.mkdirsSync('my_blueprint/files');
     fs.writeFileSync('my_blueprint/index.js', 'module.exports = {};');
     fs.writeFileSync('my_blueprint/files/package.json', '{ "name": "foo", "dependencies": { "fs-extra": "*" }}');
@@ -345,42 +419,15 @@ describe('Acceptance: ember new', function() {
     expect(pkgJson.name).to.equal('foo', 'uses addon name for package name');
   }));
 
-  it('ember new adds ember-welcome-page by default', co.wrap(function *() {
-    yield ember([
-      'new',
-      'foo',
-      '--skip-npm',
-      '--skip-bower',
-      '--skip-git',
-    ]);
-
-    expect(file('package.json'))
-      .to.match(/"ember-welcome-page"/);
-
-    expect(file('app/templates/application.hbs'))
-      .to.contain("{{welcome-page}}");
-  }));
-
-  it('ember new --no-welcome skips installation of ember-welcome-page', co.wrap(function *() {
-    yield ember([
-      'new',
-      'foo',
-      '--skip-npm',
-      '--skip-bower',
-      '--skip-git',
-      '--no-welcome',
-    ]);
-
-    expect(file('package.json'))
-      .not.to.match(/"ember-welcome-page"/);
-
-    expect(file('app/templates/application.hbs'))
-      .to.contain("Welcome to Ember");
-  }));
-
   describe('verify fixtures', function() {
+    function checkEslintConfig(fixturePath) {
+      expect(file('.eslintrc.js'))
+        .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, '.eslintrc.js')));
+    }
+
     function checkPackageJson(fixtureName) {
-      let currentVersion = require('../../package').version;
+
+      let currentVersion = isExperimentEnabled('MODULE_UNIFICATION') ? 'github:ember-cli/ember-cli' : require('../../package').version;
       let fixturePath = path.join(__dirname, '../fixtures', fixtureName, 'package.json');
       let fixtureContents = fs.readFileSync(fixturePath, { encoding: 'utf-8' })
         .replace("<%= emberCLIVersion %>", currentVersion);
@@ -388,58 +435,6 @@ describe('Acceptance: ember new', function() {
       expect(file('package.json'))
         .to.equal(fixtureContents);
     }
-
-    it('module-unification-app + npm + !welcome', co.wrap(function *() {
-      yield ember([
-        'new',
-        'foo',
-        '--blueprint',
-        'module-unification-app',
-        '--skip-npm',
-        '--skip-bower',
-        '--skip-git',
-        '--no-welcome',
-      ]);
-
-      let fixturePath = 'module-unification-app/npm';
-      [
-        'src/ui/routes/application/template.hbs',
-        '.travis.yml',
-        'README.md',
-        '.eslintrc.js',
-      ].forEach(filePath => {
-        expect(file(filePath))
-          .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
-      });
-
-      checkPackageJson(fixturePath);
-    }));
-
-    it('module-unification-app + yarn + welcome', co.wrap(function *() {
-      yield ember([
-        'new',
-        'foo',
-        '--blueprint',
-        'module-unification-app',
-        '--skip-npm',
-        '--skip-bower',
-        '--skip-git',
-        '--yarn',
-      ]);
-
-      let fixturePath = 'module-unification-app/yarn';
-      [
-        'src/ui/routes/application/template.hbs',
-        '.travis.yml',
-        'README.md',
-        '.eslintrc.js',
-      ].forEach(filePath => {
-        expect(file(filePath))
-          .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
-      });
-
-      checkPackageJson(fixturePath);
-    }));
 
     it('app + npm + !welcome', co.wrap(function *() {
       yield ember([
@@ -451,18 +446,23 @@ describe('Acceptance: ember new', function() {
         '--no-welcome',
       ]);
 
-      let fixturePath = 'app/npm';
+      let namespace = isExperimentEnabled('MODULE_UNIFICATION') ? 'module-unification-app' : 'app';
+      let applicationTemplate = isExperimentEnabled('MODULE_UNIFICATION') ? 'src/ui/routes/application/template.hbs' : 'app/templates/application.hbs';
+      let fixturePath = `${namespace}/npm`;
+
       [
-        'app/templates/application.hbs',
+        applicationTemplate,
         '.travis.yml',
         'README.md',
-        '.eslintrc.js',
       ].forEach(filePath => {
         expect(file(filePath))
           .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
       });
 
       checkPackageJson(fixturePath);
+
+      // option independent, but piggy-backing on an existing generate for speed
+      checkEslintConfig(namespace);
     }));
 
     it('app + yarn + welcome', co.wrap(function *() {
@@ -475,36 +475,14 @@ describe('Acceptance: ember new', function() {
         '--yarn',
       ]);
 
-      let fixturePath = 'app/yarn';
+      let namespace = isExperimentEnabled('MODULE_UNIFICATION') ? 'module-unification-app' : 'app';
+      let applicationTemplate = isExperimentEnabled('MODULE_UNIFICATION') ? 'src/ui/routes/application/template.hbs' : 'app/templates/application.hbs';
+      let fixturePath = `${namespace}/yarn`;
+
       [
-        'app/templates/application.hbs',
+        applicationTemplate,
         '.travis.yml',
         'README.md',
-        '.eslintrc.js',
-      ].forEach(filePath => {
-        expect(file(filePath))
-          .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
-      });
-
-      checkPackageJson(fixturePath);
-    }));
-
-    it('addon + npm + !welcome', co.wrap(function *() {
-      yield ember([
-        'addon',
-        'foo',
-        '--skip-npm',
-        '--skip-bower',
-        '--skip-git',
-      ]);
-
-      let fixturePath = 'addon/npm';
-      [
-        'config/ember-try.js',
-        'tests/dummy/app/templates/application.hbs',
-        '.travis.yml',
-        'README.md',
-        '.eslintrc.js',
       ].forEach(filePath => {
         expect(file(filePath))
           .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
@@ -524,13 +502,18 @@ describe('Acceptance: ember new', function() {
         '--welcome',
       ]);
 
-      let fixturePath = 'addon/yarn';
+
+      let namespace = isExperimentEnabled('MODULE_UNIFICATION') ? 'module-unification-addon' : 'addon';
+      let applicationTemplate = isExperimentEnabled('MODULE_UNIFICATION') ? 'tests/dummy/src/ui/routes/application/template.hbs' : 'tests/dummy/app/templates/application.hbs';
+      let fixturePath = `${namespace}/yarn`;
+
       [
         'config/ember-try.js',
-        'tests/dummy/app/templates/application.hbs',
+
+        applicationTemplate,
         '.travis.yml',
         'README.md',
-        '.eslintrc.js',
+        'CONTRIBUTING.md',
       ].forEach(filePath => {
         expect(file(filePath))
           .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
@@ -538,6 +521,56 @@ describe('Acceptance: ember new', function() {
 
       checkPackageJson(fixturePath);
     }));
+
+    it('addon + npm + !welcome', co.wrap(function *() {
+      yield ember([
+        'addon',
+        'foo',
+        '--skip-npm',
+        '--skip-bower',
+        '--skip-git',
+      ]);
+
+      let namespace = isExperimentEnabled('MODULE_UNIFICATION') ? 'module-unification-addon' : 'addon';
+      let applicationTemplate = isExperimentEnabled('MODULE_UNIFICATION') ? 'tests/dummy/src/ui/routes/application/template.hbs' : 'tests/dummy/app/templates/application.hbs';
+      let fixturePath = `${namespace}/npm`;
+
+      [
+        'config/ember-try.js',
+        applicationTemplate,
+        '.travis.yml',
+        'README.md',
+        'CONTRIBUTING.md',
+      ].forEach(filePath => {
+        expect(file(filePath))
+          .to.equal(file(path.join(__dirname, '../fixtures', fixturePath, filePath)));
+      });
+
+      checkPackageJson(fixturePath);
+
+      // option independent, but piggy-backing on an existing generate for speed
+      checkEslintConfig(namespace);
+    }));
+
+    if (isExperimentEnabled('MODULE_UNIFICATION')) {
+      it('EMBER_CLI_MODULE_UNIFICATION: ember addon foo works', co.wrap(function *() {
+        yield ember([
+          'addon',
+          'foo',
+          '--skip-npm',
+          '--skip-bower',
+        ]);
+
+        // TODO: This test could be now removed because addon content is tested above
+        //
+        // the fixture files are now out of sync because
+        // this only tests file count and names, not contents
+        let expectedFiles = walkSync(path.join(__dirname, '../fixtures', 'module-unification-addon/yarn'));
+        let actualFiles = walkSync('.');
+        expect(actualFiles).to.deep.equal(expectedFiles);
+      }));
+    }
+
   });
 
   describe('verify dependencies', function() {

@@ -4,6 +4,7 @@ const co = require('co');
 const path = require('path');
 const fs = require('fs-extra');
 
+const { isExperimentEnabled } = require('../../lib/experiments');
 const runCommand = require('../helpers/run-command');
 const acceptance = require('../helpers/acceptance');
 const copyFixtureFiles = require('../helpers/copy-fixture-files');
@@ -19,6 +20,10 @@ let dir = chai.dir;
 
 let appName = 'some-cool-app';
 let appRoot;
+
+let fixturePrefix = isExperimentEnabled("MODULE_UNIFICATION")
+  ? 'mu-app'
+  : 'app';
 
 describe('Acceptance: preprocessor-smoke-test', function() {
   this.timeout(360000);
@@ -39,7 +44,7 @@ describe('Acceptance: preprocessor-smoke-test', function() {
   });
 
   it('addons with standard preprocessors compile correctly', co.wrap(function *() {
-    yield copyFixtureFiles('preprocessor-tests/app-with-addon-with-preprocessors');
+    yield copyFixtureFiles(`preprocessor-tests/${fixturePrefix}-with-addon-with-preprocessors`);
 
     let packageJsonPath = path.join(appRoot, 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);
@@ -54,7 +59,7 @@ describe('Acceptance: preprocessor-smoke-test', function() {
   }));
 
   it('addon registry entries are added in the proper order', co.wrap(function *() {
-    yield copyFixtureFiles('preprocessor-tests/app-registry-ordering');
+    yield copyFixtureFiles(`preprocessor-tests/${fixturePrefix}-registry-ordering`);
 
     let packageJsonPath = path.join(appRoot, 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);
@@ -71,7 +76,7 @@ describe('Acceptance: preprocessor-smoke-test', function() {
   }));
 
   it('addons without preprocessors compile correctly', co.wrap(function *() {
-    yield copyFixtureFiles('preprocessor-tests/app-with-addon-without-preprocessors');
+    yield copyFixtureFiles(`preprocessor-tests/${fixturePrefix}-with-addon-without-preprocessors`);
 
     let packageJsonPath = path.join(appRoot, 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);
@@ -93,7 +98,7 @@ describe('Acceptance: preprocessor-smoke-test', function() {
       |-- preprocessor should not apply to this
   */
   it('addons depending on preprocessor addon preprocesses addon but not app', co.wrap(function *() {
-    yield copyFixtureFiles('preprocessor-tests/app-with-addon-with-preprocessors-2');
+    yield copyFixtureFiles(`preprocessor-tests/${fixturePrefix}-with-addon-with-preprocessors-2`);
 
     let packageJsonPath = path.join(appRoot, 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);
@@ -121,7 +126,7 @@ describe('Acceptance: preprocessor-smoke-test', function() {
       |-- preprocessor should not apply to this
   */
   it('addon N levels deep depending on preprocessor preprocesses that parent addon only', co.wrap(function *() {
-    yield copyFixtureFiles('preprocessor-tests/app-with-addon-with-preprocessors-3');
+    yield copyFixtureFiles(`preprocessor-tests/${fixturePrefix}-with-addon-with-preprocessors-3`);
 
     let packageJsonPath = path.join(appRoot, 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);

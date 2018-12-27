@@ -6,6 +6,7 @@ const processHelpString = require('../../helpers/process-help-string');
 const Yam = require('yam');
 const EOL = require('os').EOL;
 const td = require('testdouble');
+const ci = require('ci-info');
 const RSVP = require('rsvp');
 const Promise = RSVP.Promise;
 
@@ -100,7 +101,7 @@ describe('models/command.js', function() {
     expect(new ServeCommand(options).parseArgs(['--port', '80'])).to.have.nested.property('options.port', 80);
   });
 
-  it('parseArgs() should get command options from the config file and command line', function() {
+  (ci.APPVEYOR ? it.skip : it)('parseArgs() should get command options from the config file and command line', function() {
     expect(new ServeCommand(Object.assign(options, {
       settings: config.getAll(),
     })).parseArgs(['--port', '789'])).to.deep.equal({
@@ -120,7 +121,7 @@ describe('models/command.js', function() {
     expect(new ServeCommand(options).parseArgs([])).to.have.nested.property('options.port', 4200);
   });
 
-  it('parseArgs() should return args too.', function() {
+  (ci.APPVEYOR ? it.skip : it)('parseArgs() should return args too.', function() {
     expect(new ServeCommand(Object.assign(options, {
       settings: config.getAll(),
     })).parseArgs(['foo', '--port', '80'])).to.deep.equal({
@@ -140,7 +141,7 @@ describe('models/command.js', function() {
     new ServeCommand(Object.assign(options, {
       settings: config.getAll(),
     })).parseArgs(['foo', '--envirmont', 'production']);
-    expect(ui.output).to.match(/The option '--envirmont' is not registered with the serve command. Run `ember serve --help` for a list of supported options./);
+    expect(ui.output).to.match(/The option '--envirmont' is not registered with the 'serve' command. Run `ember serve --help` for a list of supported options./);
   });
 
   it('parseArgs() should parse shorthand options.', function() {
@@ -166,8 +167,8 @@ describe('models/command.js', function() {
 
   describe('#validateAndRun', function() {
 
-    it('should print a message if a required option is missing.', function() {
-      return new DevelopEmberCLICommand(options).validateAndRun([]).then(function() {
+    it('should reject and print a message if a required option is missing.', function() {
+      return new DevelopEmberCLICommand(options).validateAndRun([]).catch(function() {
         expect(ui.output).to.match(/requires the option.*package-name/);
       });
     });

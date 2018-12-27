@@ -14,6 +14,12 @@ const net = require('net');
 const EOL = require('os').EOL;
 const nock = require('nock');
 const express = require('express');
+const co = require('co');
+const WebSocket = require('websocket').w3cwebsocket;
+
+function checkMiddlewareOptions(options) {
+  expect(options).to.satisfy(option => option.baseURL || option.rootURL);
+}
 
 describe('express-server', function() {
   let subject, ui, project, proxy, nockProxy;
@@ -36,12 +42,13 @@ describe('express-server', function() {
   });
 
   afterEach(function() {
-    try {
-      subject.httpServer.close();
-    } catch (err) { /* ignore */ }
-    try {
-      proxy.httpServer.close();
-    } catch (err) { /* ignore */ }
+    return subject.stopHttpServer()
+      .catch(() => {})
+      .then(() => {
+        try {
+          proxy.httpServer.close();
+        } catch (err) { /* ignore */ }
+      });
   });
 
 
@@ -284,8 +291,37 @@ describe('express-server', function() {
               });
           });
       });
-    }),
 
+      it('does not use compression for server sent events', co.wrap(function *() {
+        project.require = function() {
+          let app = express();
+          app.use('/foo', function(req, res) {
+            res.set('Content-Type', 'text/event-stream');
+            res.send(longText);
+          });
+          return app;
+        };
+
+        yield subject.start({
+          proxy: 'http://localhost:3001/',
+          host: undefined,
+          port: '1337',
+          rootURL: '/',
+          compression: true,
+        });
+
+        yield request(subject.app)
+          .get('/foo')
+          .set('accept', 'application/json, */*')
+          .expect(function(res) {
+            expect(res.text).to.equal(longText);
+            expect(res.header['content-encoding']).to.not.exist;
+            expect(parseInt(res.header['content-length'], 10)).to.equal(longText.length);
+          });
+
+        expect(proxy.called).to.equal(false);
+      }));
+    });
 
     describe('with proxy', function() {
       beforeEach(function() {
@@ -294,6 +330,7 @@ describe('express-server', function() {
           host: undefined,
           port: '1337',
           rootURL: '/',
+          liveReload: true,
         });
       });
 
@@ -352,6 +389,32 @@ describe('express-server', function() {
 
       it('proxies DELETE', function(done) {
         apiTest(subject.app, 'delete', '/api/delete', done);
+      });
+
+      it('proxies websockets', function(done) {
+        let number = Math.round(Math.random() * 0xFFFFFF);
+        let client = new WebSocket('ws://localhost:1337/foo');
+
+        client.onerror = error => {
+          done(error); // fail the test
+        };
+
+        client.onopen = () => {
+          client.send(number.toString());
+
+          setTimeout(() => {
+            client.close();
+
+            setTimeout(() => {
+              expect(proxy.websocketEvents).to.deep.eql([
+                'connect',
+                `message: ${number}`,
+                'close',
+              ]);
+              done();
+            }, 10);
+          }, 10);
+        };
       });
 
       // test for #1263
@@ -496,6 +559,7 @@ describe('express-server', function() {
     describe('without proxy', function() {
       function startServer(rootURL) {
         return subject.start({
+          environment: 'development',
           host: undefined,
           port: '1337',
           rootURL: rootURL || '/',
@@ -679,7 +743,29 @@ describe('express-server', function() {
           });
       });
 
+      it('serves a static wasm file up from build output with correct Content-Type header', function(done) {
+        startServer()
+          .then(function() {
+            request(subject.app)
+              .get('/vendor/foo.wasm')
+              .expect(200)
+              .end(function(err, response) {
+                if (err) {
+                  return done(err);
+                }
+
+                expect(response.headers['content-type']).to.equal('application/wasm');
+
+                done();
+              });
+          });
+      });
+
       it('serves static asset up from build output without a period in name (with rootURL)', function(done) {
+        project._config = {
+          rootURL: '/foo',
+        };
+
         startServer('/foo')
           .then(function() {
             request(subject.app)
@@ -703,7 +789,8 @@ describe('express-server', function() {
       beforeEach(function() {
         calls = 0;
 
-        subject.processAddonMiddlewares = function() {
+        subject.processAddonMiddlewares = function(options) {
+          checkMiddlewareOptions(options);
           calls++;
         };
       });
@@ -727,11 +814,13 @@ describe('express-server', function() {
 
         project.initializeAddons = function() { };
         project.addons = [{
-          serverMiddleware() {
+          serverMiddleware({ options }) {
+            checkMiddlewareOptions(options);
             firstCalls++;
           },
         }, {
-          serverMiddleware() {
+          serverMiddleware({ options }) {
+            checkMiddlewareOptions(options);
             secondCalls++;
           },
         }, {
@@ -839,18 +928,22 @@ describe('express-server', function() {
 
       it('calls processAppMiddlewares upon start', function() {
         let realOptions = {
+          baseURL: '/',
+          rootURL: undefined,
           host: undefined,
           port: '1337',
         };
 
         return subject.start(realOptions).then(function() {
-          expect(passedOptions === realOptions).to.equal(true);
+          expect(passedOptions).to.deep.equal(realOptions);
           expect(calls).to.equal(1);
         });
       });
 
       it('calls processAppMiddlewares upon restart', function() {
         let realOptions = {
+          baseURL: '/',
+          rootURL: undefined,
           host: undefined,
           port: '1337',
         };
@@ -866,7 +959,7 @@ describe('express-server', function() {
           .then(function() {
             expect(subject.app).to.be.ok;
             expect(originalApp).to.not.equal(subject.app);
-            expect(passedOptions === realOptions).to.equal(true);
+            expect(passedOptions).to.deep.equal(realOptions);
             expect(calls).to.equal(2);
           });
       });
@@ -956,7 +1049,7 @@ describe('express-server', function() {
           subject.changedFiles = ['bar.js'];
           return subject.restartHttpServer();
         }).then(function() {
-          expect(ui.output).to.equal(EOL + chalk.green('Server restarted.') + EOL + EOL);
+          expect(ui.output).to.contains(EOL + chalk.green('Server restarted.') + EOL + EOL);
           expect(subject.httpServer, 'HTTP server exists').to.be.ok;
           expect(subject.httpServer).to.not.equal(originalHttpServer, 'HTTP server has changed');
           expect(!!subject.app).to.equal(true, 'App exists');

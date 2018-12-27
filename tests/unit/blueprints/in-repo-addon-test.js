@@ -11,6 +11,7 @@ const td = require('testdouble');
 
 const expect = require('ember-cli-blueprint-test-helpers/chai').expect;
 const file = require('ember-cli-blueprint-test-helpers/chai').file;
+const { isExperimentEnabled } = require('../../../lib/experiments');
 
 describe('Acceptance: ember generate and destroy in-repo-addon', function() {
   setupTestHooks(this, {
@@ -20,6 +21,8 @@ describe('Acceptance: ember generate and destroy in-repo-addon', function() {
   it('in-repo-addon fooBar', function() {
     let args = ['in-repo-addon', 'fooBar'];
 
+    const path = isExperimentEnabled('MODULE_UNIFICATION') ? 'packages' : 'lib';
+
     return emberNew()
       .then(function() {
         expect(fs.readJsonSync('package.json')['ember-addon']).to.be.undefined;
@@ -28,10 +31,10 @@ describe('Acceptance: ember generate and destroy in-repo-addon', function() {
         return emberGenerate(args);
       })
       .then(function() {
-        expect(file('lib/foo-bar/package.json')).to.exist;
-        expect(file('lib/foo-bar/index.js')).to.exist;
+        expect(file(`${path}/foo-bar/package.json`)).to.exist;
+        expect(file(`${path}/foo-bar/index.js`)).to.exist;
 
-        expect(fs.readJsonSync('lib/foo-bar/package.json')).to.deep.equal({
+        expect(fs.readJsonSync(`${path}/foo-bar/package.json`)).to.deep.equal({
           "name": "foo-bar",
           "keywords": [
             "ember-addon",
@@ -40,7 +43,7 @@ describe('Acceptance: ember generate and destroy in-repo-addon', function() {
 
         expect(fs.readJsonSync('package.json')['ember-addon']).to.deep.equal({
           "paths": [
-            "lib/foo-bar",
+            `${path}/foo-bar`,
           ],
         });
       })
@@ -48,12 +51,13 @@ describe('Acceptance: ember generate and destroy in-repo-addon', function() {
         return emberDestroy(args);
       })
       .then(function() {
-        expect(file('lib/foo-bar/package.json')).to.not.exist;
-        expect(file('lib/foo-bar/index.js')).to.not.exist;
+        expect(file(`${path}/foo-bar/package.json`)).to.not.exist;
+        expect(file(`${path}/foo-bar/index.js`)).to.not.exist;
 
         expect(fs.readJsonSync('package.json')['ember-addon']['paths']).to.be.undefined;
       });
   });
+
 });
 
 describe('Unit: in-repo-addon blueprint', function() {

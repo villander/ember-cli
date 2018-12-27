@@ -3,13 +3,14 @@
 const Project = require('../../lib/models/project');
 const Instrumentation = require('../../lib/models/instrumentation');
 const MockUI = require('console-ui/mock');
-const td = require('testdouble');
+
+// eslint-disable-next-line node/no-unpublished-require
 
 class MockProject extends Project {
-  constructor() {
-    let root = process.cwd();
-    let pkg = {};
-    let ui = new MockUI();
+  constructor(options = {}) {
+    let root = options.root || process.cwd();
+    let pkg = options.pkg || {};
+    let ui = options.ui || new MockUI();
     let instr = new Instrumentation({
       ui,
       initInstrumentation: {
@@ -17,14 +18,11 @@ class MockProject extends Project {
         node: null,
       },
     });
-    let cli = {
+    let cli = options.cli || {
       instrumentation: instr,
     };
 
     super(root, pkg, ui, cli);
-
-    let discoverFromCli = td.replace(this.addonDiscovery, 'discoverFromCli');
-    td.when(discoverFromCli(), { ignoreExtraArgs: true }).thenReturn([]);
   }
 
   require(file) {

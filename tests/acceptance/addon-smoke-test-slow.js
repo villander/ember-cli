@@ -7,6 +7,7 @@ const fs = require('fs-extra');
 const spawn = require('child_process').spawn;
 const chalk = require('chalk');
 
+const { isExperimentEnabled } = require('../../lib/experiments');
 const runCommand = require('../helpers/run-command');
 const ember = require('../helpers/ember');
 const copyFixtureFiles = require('../helpers/copy-fixture-files');
@@ -36,14 +37,18 @@ describe('Acceptance: addon-smoke-test', function() {
 
   beforeEach(function() {
     addonRoot = linkDependencies(addonName);
+
+    process.env.JOBS = '1';
   });
 
   afterEach(function() {
     // Cleans up a folder set up on the other side of a symlink.
-    fs.remove(path.join(addonRoot, 'node_modules', 'developing-addon'));
+    fs.removeSync(path.join(addonRoot, 'node_modules', 'developing-addon'));
 
     cleanupRun(addonName);
     expect(dir(addonRoot)).to.not.exist;
+
+    delete process.env.JOBS;
   });
 
   it('generates package.json with proper metadata', function() {
@@ -55,12 +60,13 @@ describe('Acceptance: addon-smoke-test', function() {
     expect(packageContents['ember-addon']).to.deep.equal({ 'configPath': 'tests/dummy/config' });
   });
 
-  it('ember addon foo, clean from scratch', function() {
+  (isExperimentEnabled('MODULE_UNIFICATION') ? it.skip : it)('ember addon foo, clean from scratch', function() {
     return ember(['test']);
   });
 
   it('works in most common scenarios for an example addon', co.wrap(function *() {
-    yield copyFixtureFiles('addon/kitchen-sink');
+    let fixtureFile = isExperimentEnabled('MODULE_UNIFICATION') ? 'kitchen-sink-mu' : 'kitchen-sink';
+    yield copyFixtureFiles(`addon/${fixtureFile}`);
 
     let packageJsonPath = path.join(addonRoot, 'package.json');
     let packageJson = fs.readJsonSync(packageJsonPath);

@@ -87,8 +87,6 @@ let fixtureBlueprints = path.resolve(__dirname, '..', '..', 'fixtures', 'bluepri
 let basicBlueprint = path.join(fixtureBlueprints, 'basic');
 let basicNewBlueprint = path.join(fixtureBlueprints, 'basic_2');
 
-let defaultIgnoredFiles = Blueprint.ignoredFiles;
-
 let basicBlueprintFiles = [
   '.ember-cli',
   '.gitignore',
@@ -117,8 +115,6 @@ describe('Blueprint', function() {
   let InstrumentedBasicBlueprint = BasicBlueprintClass.extend(instrumented);
 
   beforeEach(function() {
-    Blueprint.ignoredFiles = defaultIgnoredFiles;
-
     resetCalled();
   });
 
@@ -464,6 +460,54 @@ describe('Blueprint', function() {
             expect(output.shift()).to.match(/^installing/);
             expect(output.shift()).to.match(/identical.* \.ember-cli/);
             expect(output.shift()).to.match(/identical.* \.gitignore/);
+            expect(output.shift()).to.match(/skip.* test.txt/);
+            expect(output.length).to.equal(0);
+
+            expect(actualFiles).to.deep.equal(basicBlueprintFiles);
+          });
+      });
+    });
+
+    describe('called on a new project', function() {
+      beforeEach(function() {
+        Blueprint.ignoredUpdateFiles.push('foo.txt');
+      });
+
+      it('does not ignores files in ignoredUpdateFiles', function() {
+        td.when(ui.prompt(), { ignoreExtraArgs: true }).thenReturn(Promise.resolve({ answer: 'skip' }));
+
+        return blueprint
+          .install(options)
+          .then(function() {
+            let output = ui.output.trim().split(EOL);
+            ui.output = '';
+
+            expect(output.shift()).to.match(/^installing/);
+            expect(output.shift()).to.match(/create.* .ember-cli/);
+            expect(output.shift()).to.match(/create.* .gitignore/);
+            expect(output.shift()).to.match(/create.* app[/\\]basics[/\\]mock-project.txt/);
+            expect(output.shift()).to.match(/create.* bar/);
+            expect(output.shift()).to.match(/create.* file-to-remove.txt/);
+            expect(output.shift()).to.match(/create.* foo.txt/);
+            expect(output.shift()).to.match(/create.* test.txt/);
+            expect(output.length).to.equal(0);
+
+            let blueprintNew = new Blueprint(basicNewBlueprint);
+
+            options.project.isEmberCLIProject = function() { return false; };
+
+            return blueprintNew.install(options);
+          })
+          .then(function() {
+
+            let actualFiles = walkSync(tmpdir).sort();
+            // Prompts contain \n EOL
+            // Split output on \n since it will have the same affect as spliting on OS specific EOL
+            let output = ui.output.trim().split('\n');
+            expect(output.shift()).to.match(/^installing/);
+            expect(output.shift()).to.match(/identical.* \.ember-cli/);
+            expect(output.shift()).to.match(/identical.* \.gitignore/);
+            expect(output.shift()).to.match(/skip.* foo.txt/);
             expect(output.shift()).to.match(/skip.* test.txt/);
             expect(output.length).to.equal(0);
 
@@ -1476,6 +1520,7 @@ describe('Blueprint', function() {
         dasherizedModuleName: 'mock-project',
         hasPathToken: undefined,
         inAddon: false,
+        in: undefined,
         inDummy: false,
         inRepoAddon: undefined,
         locals: {},
@@ -1552,6 +1597,16 @@ describe('Blueprint', function() {
 
       expectation.inRepoAddon = true;
       expectation.inAddon = true;
+
+      result = blueprint._generateFileMapVariables(moduleName, locals, options);
+
+      expect(result).to.eql(expectation);
+    });
+
+    it('should include an in flag of true if options.in is true', function() {
+      options.in = true;
+
+      expectation.in = true;
 
       result = blueprint._generateFileMapVariables(moduleName, locals, options);
 

@@ -61,7 +61,6 @@ module.exports = {
         },
         {
           name: 'yarn',
-          default: false,
           key: 'yarn',
           required: false
         },
@@ -191,6 +190,13 @@ module.exports = {
           aliases: ['in-repo', 'ir'],
           key: 'inRepoAddon',
           required: false
+        },
+        {
+          name: 'in',
+          default: null,
+          description: 'Runs a blueprint against an in repo addon. A path is expected, relative to the root of the project.',
+          key: 'in',
+          required: false
         }
       ],
       anonymousOptions: ['<blueprint>']
@@ -241,6 +247,13 @@ module.exports = {
           default: null,
           aliases: ['in-repo', 'ir'],
           key: 'inRepoAddon',
+          required: false
+        },
+        {
+          name: 'in',
+          default: null,
+          description: 'Runs a blueprint against an in repo addon. A path is expected, relative to the root of the project.',
+          key: 'in',
           required: false
         }
       ],
@@ -337,8 +350,22 @@ module.exports = {
               overridden: false
             },
             {
+              name: 'module-unification-addon',
+              description: 'Generates an Ember addon with a module unification layout.',
+              availableOptions: [],
+              anonymousOptions: ['name'],
+              overridden: false
+            },
+            {
               name: 'module-unification-app',
               description: 'Generates an Ember application with a module unification layout.',
+              availableOptions: [],
+              anonymousOptions: ['name'],
+              overridden: false
+            },
+            {
+              name: 'packages',
+              description: 'Generates a packages directory for module unification in-repo addons.',
               availableOptions: [],
               anonymousOptions: ['name'],
               overridden: false
@@ -578,6 +605,22 @@ module.exports = {
           required: false
         },
         {
+          name: 'proxy-in-timeout',
+          default: 120000,
+          description: 'When using --proxy: timeout (in ms) for incoming requests',
+          aliases: ['pit'],
+          key: 'proxyInTimeout',
+          required: false
+        },
+        {
+          name: 'proxy-out-timeout',
+          default: 0,
+          description: 'When using --proxy: timeout (in ms) for outgoing requests',
+          aliases: ['pot'],
+          key: 'proxyOutTimeout',
+          required: false
+        },
+        {
           name: 'secure-proxy',
           default: true,
           description: 'Set to false to proxy self-signed SSL certificates',
@@ -623,9 +666,17 @@ module.exports = {
         },
         {
           name: 'live-reload-port',
-          description: '(Defaults to port number within [49152...65535])',
+          description: 'Defaults to same port as ember app',
           aliases: ['lrp'],
           key: 'liveReloadPort',
+          required: false
+        },
+        {
+          name: 'live-reload-prefix',
+          default: '_lr',
+          description: 'Default to _lr',
+          aliases: ['lrprefix'],
+          key: 'liveReloadPrefix',
           required: false
         },
         {
@@ -651,20 +702,30 @@ module.exports = {
         {
           name: 'ssl',
           default: false,
+          description: 'Set to true to configure Ember CLI to serve using SSL.',
           key: 'ssl',
           required: false
         },
         {
           name: 'ssl-key',
           default: 'ssl/server.key',
+          description: 'Specify the private key to use for SSL.',
           key: 'sslKey',
           required: false
         },
         {
           name: 'ssl-cert',
           default: 'ssl/server.crt',
+          description: 'Specify the certificate to use for SSL.',
           key: 'sslCert',
           required: false
+        },
+        {
+          name: 'path',
+          description: 'Reuse an existing build at given path.',
+          key: 'path',
+          required: false,
+          type: 'Path'
         }
       ],
       anonymousOptions: []
@@ -750,6 +811,27 @@ module.exports = {
           default: false,
           description: 'Suppress any output except for the test report',
           key: 'silent',
+          required: false
+        },
+        {
+          name: 'ssl',
+          default: false,
+          description: 'Set to true to configure testem to run the test suite using SSL.',
+          key: 'ssl',
+          required: false
+        },
+        {
+          name: 'ssl-key',
+          default: 'ssl/server.key',
+          description: 'Specify the private key to use for SSL.',
+          key: 'sslKey',
+          required: false
+        },
+        {
+          name: 'ssl-cert',
+          default: 'ssl/server.crt',
+          description: 'Specify the certificate to use for SSL.',
+          key: 'sslCert',
           required: false
         },
         {
